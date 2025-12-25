@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Palette, Undo, Redo, Pencil, Eraser, MousePointer, Plus, Pipette, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCcw, Layers, Eye, EyeOff, Lock, Unlock, X, Trash2, Copy, Move } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Palette, Undo, Redo, Pencil, Eraser, MousePointer, Plus, Pipette, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCcw, Layers, Eye, EyeOff, Lock, Unlock, X, Trash2, Copy, Move, Download, Upload } from 'lucide-react';
 
 interface Layer {
   id: string;
@@ -192,6 +192,9 @@ export default function PixelArtGenerator() {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [activeLayerIndex, setActiveLayerIndex] = useState(0);
   const [showLayersPanel, setShowLayersPanel] = useState(false);
+  
+  // 导出相关状态
+  const [customPalette, setCustomPalette] = useState<string[]>([]);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
@@ -223,6 +226,35 @@ export default function PixelArtGenerator() {
   // 存储工具栏尺寸，避免拖拽中动态获取尺寸导致的重排和尺寸值不准确
   const toolbarSizeRef = useRef({ width: 0, height: 0 });
 
+  // 导出功能状态
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpg' | 'svg' | 'json'>('png');
+  const [exportScale, setExportScale] = useState(1);
+  const [exportQuality, setExportQuality] = useState(0.9);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // 自动恢复相关状态
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [restoreData, setRestoreData] = useState<ProjectData | null>(null);
+
+  // 项目数据类型定义
+  interface ProjectData {
+    version?: string;
+    canvasSize?: { width: number; height: number };
+    layers?: Array<{
+      id: string;
+      name: string;
+      pixels: Record<string, string>;
+      visible: boolean;
+      opacity: number;
+      locked: boolean;
+    }>;
+    customPalette?: string[];
+    selectedColor?: string;
+    timestamp?: number;
+    autoSave?: boolean;
+  }
+
 
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -237,7 +269,6 @@ export default function PixelArtGenerator() {
     if (containerRect && canvasRect) {
       // 工具栏默认宽度估计值（实际宽度会在拖拽时更新）
       const defaultToolbarWidth = 200;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectionToolbarPos({
         top: Math.max(0, canvasRect.bottom + 10),
         left: Math.max(0, Math.min(containerRect.width - defaultToolbarWidth, (containerRect.width - defaultToolbarWidth) / 2))
@@ -310,8 +341,8 @@ export default function PixelArtGenerator() {
         const containerRect = containerRef.current.getBoundingClientRect();
         
         // 使用拖拽过程中保存的位置，避免重新计算导致位置偏差
-        let finalTop = currentToolbarPos.current.top;
-        let finalLeft = currentToolbarPos.current.left;
+        const finalTop = currentToolbarPos.current.top;
+        const finalLeft = currentToolbarPos.current.left;
         
         // 确保位置在容器内（边界检查）
         // 使用存储的尺寸，避免动态获取
@@ -359,8 +390,8 @@ export default function PixelArtGenerator() {
         const containerRect = containerRef.current.getBoundingClientRect();
         
         // 使用拖拽过程中保存的位置，避免重新计算导致位置偏差
-        let finalTop = currentToolbarPos.current.top;
-        let finalLeft = currentToolbarPos.current.left;
+        const finalTop = currentToolbarPos.current.top;
+        const finalLeft = currentToolbarPos.current.left;
         
         // 确保位置在容器内（边界检查）
         // 使用存储的尺寸，避免动态获取
@@ -411,7 +442,6 @@ export default function PixelArtGenerator() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCustomColors(parsed);
       } catch {
         console.error('Failed to load custom colors');
@@ -420,11 +450,342 @@ export default function PixelArtGenerator() {
   }, []);
 
   // 历史记录管理函数
-  const addToHistory = (newLayers: Layer[]) => {
+  const addToHistory = useCallback((newLayers: Layer[]) => {
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(JSON.parse(JSON.stringify(newLayers)));
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
+  }, [history, historyIndex]);
+
+  // 图层合并渲染函数 - 将所有可见图层合并为一个像素数组
+  const mergeVisibleLayers = (): Record<string, string> => {
+    const mergedPixels: Record<string, string> = {};
+    
+    // 反转图层顺序（从下到上）
+    [...layers].reverse().forEach(layer => {
+      if (!layer.visible) return;
+      
+      Object.keys(layer.pixels).forEach(key => {
+        // 保留最后绘制的像素（上层覆盖下层）
+        mergedPixels[key] = layer.pixels[key];
+      });
+    });
+    
+    return mergedPixels;
+  };
+
+  // PNG导出功能
+  const exportPNG = () => {
+    try {
+      const mergedPixels = mergeVisibleLayers();
+      const scaledWidth = canvasSize.width * exportScale;
+      const scaledHeight = canvasSize.height * exportScale;
+      
+      // 创建导出画布
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = scaledWidth;
+      exportCanvas.height = scaledHeight;
+      const ctx = exportCanvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('无法创建画布上下文');
+      }
+      
+      // 设置背景为透明
+      ctx.clearRect(0, 0, scaledWidth, scaledHeight);
+      
+      // 绘制像素
+      Object.keys(mergedPixels).forEach(key => {
+        const [x, y] = key.split(',').map(Number);
+        const scaledX = x * exportScale;
+        const scaledY = y * exportScale;
+        
+        ctx.fillStyle = mergedPixels[key];
+        ctx.fillRect(scaledX, scaledY, exportScale, exportScale);
+      });
+      
+      // 转换为Blob并下载
+      exportCanvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `pixel_art_${Date.now()}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          setIsExporting(false);
+          setShowExportDialog(false);
+        } else {
+          throw new Error('PNG导出失败');
+        }
+      }, 'image/png');
+      
+    } catch (error) {
+      console.error('PNG导出错误:', error);
+      alert('PNG导出失败，请重试');
+      setIsExporting(false);
+    }
+  };
+
+  // JPG导出功能
+  const exportJPG = () => {
+    try {
+      const mergedPixels = mergeVisibleLayers();
+      const scaledWidth = canvasSize.width * exportScale;
+      const scaledHeight = canvasSize.height * exportScale;
+      
+      // 创建导出画布
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = scaledWidth;
+      exportCanvas.height = scaledHeight;
+      const ctx = exportCanvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('无法创建画布上下文');
+      }
+      
+      // 设置背景为白色（JPG不支持透明）
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, scaledWidth, scaledHeight);
+      
+      // 绘制像素
+      Object.keys(mergedPixels).forEach(key => {
+        const [x, y] = key.split(',').map(Number);
+        const scaledX = x * exportScale;
+        const scaledY = y * exportScale;
+        
+        ctx.fillStyle = mergedPixels[key];
+        ctx.fillRect(scaledX, scaledY, exportScale, exportScale);
+      });
+      
+      // 转换为Blob并下载
+      exportCanvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `pixel_art_${Date.now()}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          setIsExporting(false);
+          setShowExportDialog(false);
+        } else {
+          throw new Error('JPG导出失败');
+        }
+      }, 'image/jpeg', exportQuality);
+      
+    } catch (error) {
+      console.error('JPG导出错误:', error);
+      alert('JPG导出失败，请重试');
+      setIsExporting(false);
+    }
+  };
+
+  // SVG导出功能
+  const exportSVG = () => {
+    try {
+      const mergedPixels = mergeVisibleLayers();
+      const scaledWidth = canvasSize.width * exportScale;
+      const scaledHeight = canvasSize.height * exportScale;
+      
+      // 创建SVG内容
+      const svgElements: string[] = [];
+      
+      // 按颜色分组像素以减少SVG元素数量
+      const colorGroups: Record<string, string[]> = {};
+      Object.keys(mergedPixels).forEach(key => {
+        const color = mergedPixels[key];
+        if (!colorGroups[color]) {
+          colorGroups[color] = [];
+        }
+        colorGroups[color].push(key);
+      });
+      
+      // 生成SVG rect元素
+      Object.keys(colorGroups).forEach(color => {
+        const pixels = colorGroups[color];
+        const rects = pixels.map(key => {
+          const [x, y] = key.split(',').map(Number);
+          const scaledX = x * exportScale;
+          const scaledY = y * exportScale;
+          return `<rect x="${scaledX}" y="${scaledY}" width="${exportScale}" height="${exportScale}" fill="${color}"/>`;
+        }).join('');
+        svgElements.push(rects);
+      });
+      
+      // 构建完整SVG
+      const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${scaledWidth}" height="${scaledHeight}" viewBox="0 0 ${scaledWidth} ${scaledHeight}">
+  ${svgElements.join('\n  ')}
+</svg>`;
+      
+      // 创建Blob并下载
+      const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pixel_art_${Date.now()}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setIsExporting(false);
+      setShowExportDialog(false);
+      
+    } catch (error) {
+      console.error('SVG导出错误:', error);
+      alert('SVG导出失败，请重试');
+      setIsExporting(false);
+    }
+  };
+
+  // JSON数据导出功能
+  const exportJSON = () => {
+    try {
+      // 准备项目数据结构
+      const projectData = {
+        version: '1.0.0',
+        canvasSize: canvasSize,
+        layers: layers.map(layer => ({
+          id: layer.id,
+          name: layer.name,
+          pixels: layer.pixels,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          locked: layer.locked
+        })),
+        selectedColor: currentColor,
+        customPalette: customPalette,
+        timestamp: new Date().toISOString()
+      };
+      
+      // 转换为格式化的JSON字符串
+      const jsonContent = JSON.stringify(projectData, null, 2);
+      
+      // 创建Blob并下载
+      const blob = new Blob([jsonContent], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pixel_art_project_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setIsExporting(false);
+      setShowExportDialog(false);
+      
+    } catch (error) {
+      console.error('JSON导出错误:', error);
+      alert('JSON导出失败，请重试');
+      setIsExporting(false);
+    }
+  };
+
+
+
+  // 自动保存函数
+  const autoSave = useCallback(() => {
+    try {
+      const projectData = {
+        version: '1.0.0',
+        canvasSize: canvasSize,
+        layers: layers.map(layer => ({
+          id: layer.id,
+          name: layer.name,
+          pixels: layer.pixels,
+          visible: layer.visible,
+          opacity: layer.opacity,
+          locked: layer.locked
+        })),
+        customPalette: customPalette,
+        selectedColor: currentColor,
+        timestamp: Date.now(),
+        autoSave: true
+      };
+      
+      localStorage.setItem('pixel_art_autosave', JSON.stringify(projectData));
+    } catch (error) {
+      console.error('自动保存失败:', error);
+    }
+  }, [canvasSize, layers, customPalette, currentColor]);
+
+  // 文件导入处理函数
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/json') {
+      alert('请选择JSON格式的项目文件');
+      return;
+    }
+
+    try {
+      setIsExporting(true); // 使用相同的加载状态
+      const text = await file.text();
+      const projectData = JSON.parse(text);
+
+      // 验证项目数据结构
+      if (!projectData.canvasSize || !projectData.layers) {
+        throw new Error('无效的项目文件格式');
+      }
+
+      // 恢复画布尺寸
+      const newSize = CANVAS_SIZES.find(size => 
+        size.width === (projectData.canvasSize?.width || 16) && 
+        size.height === (projectData.canvasSize?.height || 16)
+      ) || CANVAS_SIZES[0];
+      setCanvasSize(newSize);
+
+      // 恢复图层数据
+      const restoredLayers = (projectData.layers || []).map((layer: NonNullable<ProjectData['layers']>[0]) => ({
+        id: layer.id || `layer-${Date.now()}`,
+        name: layer.name || '导入图层',
+        pixels: layer.pixels || {},
+        visible: layer.visible !== false,
+        opacity: layer.opacity || 1,
+        locked: layer.locked || false
+      }));
+
+      setLayers(restoredLayers);
+
+      // 设置活跃图层
+      if (restoredLayers.length > 0) {
+        setActiveLayerIndex(0);
+      }
+
+      // 恢复自定义色板
+      if (projectData.customPalette && Array.isArray(projectData.customPalette)) {
+        setCustomPalette(projectData.customPalette);
+      }
+
+      // 清空历史记录
+      setHistory([restoredLayers]);
+      setHistoryIndex(0);
+
+      // 重置视图
+      setCanvasScale(1);
+      setCanvasOffset({ x: 0, y: 0 });
+
+      alert('项目导入成功！');
+      setIsExporting(false);
+
+    } catch (error) {
+      console.error('项目导入失败:', error);
+      alert('项目导入失败，请检查文件格式是否正确');
+      setIsExporting(false);
+    }
+
+    // 清空文件输入
+    event.target.value = '';
   };
 
   useEffect(() => {
@@ -513,7 +874,7 @@ export default function PixelArtGenerator() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isSpacePressed, toolMode, selection, selectedPixels, layers, activeLayerIndex]);
+  }, [isSpacePressed, toolMode, selection, selectedPixels, layers, activeLayerIndex, addToHistory, clipboardPixels, isPastePreviewing, mousePos.x, mousePos.y]);
 
 
 
@@ -530,10 +891,128 @@ export default function PixelArtGenerator() {
         setScreenSize('large');
       }
     };
+    
+    // 屏蔽浏览器右键菜单
+    const preventRightClick = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    // 添加右键菜单屏蔽
+    document.addEventListener('contextmenu', preventRightClick);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      document.removeEventListener('contextmenu', preventRightClick);
+    };
   }, []);
+
+  // 自动保存 - 当数据变化时自动保存
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (layers.length > 0) {
+        autoSave();
+      }
+    }, 1000); // 1秒后保存，避免频繁保存
+
+    return () => clearTimeout(timer);
+  }, [layers, canvasSize, customPalette, currentColor, autoSave]);
+
+  // 自动恢复 - 页面加载时检查是否有自动保存的数据
+  useEffect(() => {
+    const checkAutoRestore = () => {
+      try {
+        const savedData = localStorage.getItem('pixel_art_autosave');
+        if (savedData) {
+          const projectData = JSON.parse(savedData);
+          
+          // 如果有自动保存数据且不是刚导入的，询问是否恢复
+          if (projectData.autoSave && projectData.timestamp) {
+            const timeDiff = Date.now() - projectData.timestamp;
+            
+            // 如果数据超过5分钟，认为是有效的自动保存数据
+            if (timeDiff > 5 * 60 * 1000) {
+              setShowRestoreDialog(true);
+              setRestoreData(projectData);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('检查自动恢复数据失败:', error);
+      }
+    };
+
+    // 延迟检查，避免与初始加载冲突
+    const timer = setTimeout(checkAutoRestore, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 恢复项目数据
+  const restoreProject = () => {
+    if (!restoreData) return;
+
+    try {
+      // 恢复画布尺寸
+      const newSize = CANVAS_SIZES.find(size => 
+        size.width === (restoreData.canvasSize?.width || 16) && 
+        size.height === (restoreData.canvasSize?.height || 16)
+      ) || CANVAS_SIZES[0];
+      setCanvasSize(newSize);
+
+      // 恢复图层数据
+      const restoredLayers = (restoreData.layers || []).map((layer: NonNullable<ProjectData['layers']>[0]) => ({
+        id: layer.id || `layer-${Date.now()}`,
+        name: layer.name || '恢复图层',
+        pixels: layer.pixels || {},
+        visible: layer.visible !== false,
+        opacity: layer.opacity || 1,
+        locked: layer.locked || false
+      })) || [];
+
+      setLayers(restoredLayers);
+
+      // 设置活跃图层
+      if (restoredLayers.length > 0) {
+        setActiveLayerIndex(0);
+      }
+
+      // 恢复自定义色板
+      if (restoreData.customPalette && Array.isArray(restoreData.customPalette)) {
+        setCustomPalette(restoreData.customPalette);
+      }
+
+      // 设置当前颜色
+      if (restoreData.selectedColor) {
+        setCurrentColor(restoreData.selectedColor);
+      }
+
+      // 清空历史记录
+      setHistory([restoredLayers]);
+      setHistoryIndex(0);
+
+      // 重置视图
+      setCanvasScale(1);
+      setCanvasOffset({ x: 0, y: 0 });
+
+      // 清除自动保存数据
+      localStorage.removeItem('pixel_art_autosave');
+      
+      setShowRestoreDialog(false);
+      setRestoreData(null);
+      
+      alert('项目恢复成功！');
+    } catch (error) {
+      console.error('项目恢复失败:', error);
+      alert('项目恢复失败，请重试');
+    }
+  };
+
+  // 忽略恢复
+  const ignoreRestore = () => {
+    setShowRestoreDialog(false);
+    setRestoreData(null);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -864,47 +1343,76 @@ export default function PixelArtGenerator() {
 
     if (e.button === 0 && !isSpacePressed) {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
       
-      const rect = canvas.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
       const width = canvasSize.width;
       const pixelSize = canvas.width / width;
       
-      const x = Math.floor((e.clientX - rect.left) / pixelSize);
-      const y = Math.floor((e.clientY - rect.top) / pixelSize);
+      // 检查鼠标是否在画布范围内
+      const isOnCanvas = e.clientX >= canvasRect.left && 
+                        e.clientX <= canvasRect.right && 
+                        e.clientY >= canvasRect.top && 
+                        e.clientY <= canvasRect.bottom;
       
-      if (toolMode === 'select') {
-        // 检查是否点击在现有选区内
-        if (selection) {
-          const minX = Math.min(selection.startX, selection.endX);
-          const maxX = Math.max(selection.startX, selection.endX);
-          const minY = Math.min(selection.startY, selection.endY);
-          const maxY = Math.max(selection.startY, selection.endY);
-          
-          if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-            // 开始移动选区
-            setIsMovingSelection(true);
-            setIsDrawing(false); // 确保不是绘制状态
-            // 记录鼠标点击位置的像素坐标
-            selectionStartPosRef.current = {x, y};
-            return;
-          }
-        }
+      if (isOnCanvas) {
+        // 鼠标在画布内，正常处理
+        const x = Math.floor((e.clientX - canvasRect.left) / pixelSize);
+        const y = Math.floor((e.clientY - canvasRect.top) / pixelSize);
         
-        // 开始创建新选区，清除旧的选中像素
-        setIsSelecting(true);
-        setSelectedPixels({});
-        setSelection({startX: x, startY: y, endX: x, endY: y});
-      } else if (toolMode === 'magic') {
-        // 魔棒选择
-        floodFillSelect(x, y, tolerance);
-      } else if (toolMode === 'lasso') {
-        // 开始套索选择
-        setIsLassoSelecting(true);
-        setLassoPath([{x, y}]);
+        if (toolMode === 'select') {
+          // 检查是否点击在现有选区内
+          if (selection) {
+            const minX = Math.min(selection.startX, selection.endX);
+            const maxX = Math.max(selection.startX, selection.endX);
+            const minY = Math.min(selection.startY, selection.endY);
+            const maxY = Math.max(selection.startY, selection.endY);
+            
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+              // 开始移动选区
+              setIsMovingSelection(true);
+              setIsDrawing(false); // 确保不是绘制状态
+              // 记录鼠标点击位置的像素坐标
+              selectionStartPosRef.current = {x, y};
+              return;
+            }
+          }
+          
+          // 开始创建新选区，清除旧的选中像素
+          setIsSelecting(true);
+          setSelectedPixels({});
+          setSelection({startX: x, startY: y, endX: x, endY: y});
+        } else if (toolMode === 'magic') {
+          // 魔棒选择
+          floodFillSelect(x, y, tolerance);
+        } else if (toolMode === 'lasso') {
+          // 开始套索选择
+          setIsLassoSelecting(true);
+          setLassoPath([{x, y}]);
+        } else {
+          setIsDrawing(true);
+          handleCanvasInteraction(e);
+        }
       } else {
-        setIsDrawing(true);
-        handleCanvasInteraction(e);
+        // 鼠标在画布外，但仍在容器内，开始选择操作
+        if (toolMode === 'select') {
+          // 开始创建新选区，位置设为画布边界
+          setIsSelecting(true);
+          setSelectedPixels({});
+          
+          // 计算相对于画布的坐标，如果超出边界则限制在画布范围内
+          let x = Math.floor((e.clientX - canvasRect.left) / pixelSize);
+          let y = Math.floor((e.clientY - canvasRect.top) / pixelSize);
+          
+          // 限制坐标在画布范围内
+          x = Math.max(0, Math.min(width - 1, x));
+          const height = canvasSize.height;
+          y = Math.max(0, Math.min(height - 1, y));
+          
+          setSelection({startX: x, startY: y, endX: x, endY: y});
+        }
+        // 其他工具模式在画布外点击时不执行任何操作
       }
     }
   };
@@ -919,17 +1427,28 @@ export default function PixelArtGenerator() {
     }
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
 
-    const rect = canvas.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
     const width = canvasSize.width;
     const height = canvasSize.height;
     const pixelSize = canvas.width / width;
 
-    const x = Math.floor((e.clientX - rect.left) / pixelSize);
-    const y = Math.floor((e.clientY - rect.top) / pixelSize);
+    // 检查鼠标是否在画布范围内
+    const isOnCanvas = e.clientX >= canvasRect.left && 
+                      e.clientX <= canvasRect.right && 
+                      e.clientY >= canvasRect.top && 
+                      e.clientY <= canvasRect.bottom;
 
-    if (isDrawing && !isSpacePressed && !isMovingSelection) {
+    let x = Math.floor((e.clientX - canvasRect.left) / pixelSize);
+    let y = Math.floor((e.clientY - canvasRect.top) / pixelSize);
+
+    // 限制坐标在画布范围内
+    x = Math.max(0, Math.min(width - 1, x));
+    y = Math.max(0, Math.min(height - 1, y));
+
+    if (isDrawing && !isSpacePressed && !isMovingSelection && isOnCanvas) {
       handleCanvasInteraction(e);
     } else if (isSelecting && toolMode === 'select') {
       // 更新选区
@@ -2195,6 +2714,421 @@ export default function PixelArtGenerator() {
         </div>
       )}
 
+      {showExportDialog && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1001,
+          padding: '20px'
+        }} onClick={() => setShowExportDialog(false)}>
+          <div style={{
+            backgroundColor: '#2D3748',
+            borderRadius: '16px',
+            padding: isMobile ? '24px 20px' : '32px 28px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+            maxWidth: '500px',
+            width: '100%',
+            border: '1px solid rgba(0, 212, 255, 0.2)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              marginBottom: '24px',
+              paddingBottom: '16px',
+              borderBottom: '2px solid #4A5568'
+            }}>
+              <div style={{
+                width: '4px',
+                height: '24px',
+                backgroundColor: '#00D4FF',
+                borderRadius: '2px',
+                marginRight: '12px'
+              }} />
+              <h2 style={{
+                margin: 0,
+                fontSize: isMobile ? '18px' : '22px',
+                fontWeight: '600',
+                color: '#00D4FF'
+              }}>
+                导出图片
+              </h2>
+            </div>
+
+            <div style={{
+              marginBottom: '24px'
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                gap: '16px',
+                marginBottom: '20px'
+              }}>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#A0AEC0',
+                    fontSize: '13px',
+                    fontWeight: '500'
+                  }}>
+                    格式
+                  </label>
+                  <select
+                    value={exportFormat}
+                    onChange={(e) => setExportFormat(e.target.value as 'png' | 'jpg' | 'svg' | 'json')}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: '#1A1A1A',
+                      border: '2px solid #4A5568',
+                      borderRadius: '8px',
+                      color: '#E2E8F0',
+                      fontSize: '16px',
+                      fontWeight: '500',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="png">PNG（推荐）</option>
+                    <option value="jpg">JPG</option>
+                    <option value="svg">SVG</option>
+                    <option value="json">JSON数据</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#A0AEC0',
+                    fontSize: '13px',
+                    fontWeight: '500'
+                  }}>
+                    缩放倍数
+                  </label>
+                  <select
+                    value={exportScale}
+                    onChange={(e) => setExportScale(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: '#1A1A1A',
+                      border: '2px solid #4A5568',
+                      borderRadius: '8px',
+                      color: '#E2E8F0',
+                      fontSize: '16px',
+                      fontWeight: '500',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value={1}>1x（原始大小）</option>
+                    <option value={2}>2x</option>
+                    <option value={4}>4x</option>
+                    <option value={8}>8x</option>
+                    <option value={16}>16x</option>
+                  </select>
+                </div>
+              </div>
+
+              {exportFormat !== 'json' && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#A0AEC0',
+                    fontSize: '13px',
+                    fontWeight: '500'
+                  }}>
+                    缩放倍数
+                  </label>
+                  <select
+                    value={exportScale}
+                    onChange={(e) => setExportScale(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: '#1A1A1A',
+                      border: '2px solid #4A5568',
+                      borderRadius: '8px',
+                      color: '#E2E8F0',
+                      fontSize: '16px',
+                      fontWeight: '500',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value={1}>1x（原始大小）</option>
+                    <option value={2}>2x</option>
+                    <option value={4}>4x</option>
+                    <option value={8}>8x</option>
+                    <option value={16}>16x</option>
+                  </select>
+                </div>
+              )}
+
+              {exportFormat === 'jpg' && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#A0AEC0',
+                    fontSize: '13px',
+                    fontWeight: '500'
+                  }}>
+                    JPG质量 ({Math.round(exportQuality * 100)}%)
+                  </label>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.1"
+                    value={exportQuality}
+                    onChange={(e) => setExportQuality(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      height: '6px',
+                      borderRadius: '3px',
+                      backgroundColor: '#4A5568',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  />
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: '#718096',
+                    marginTop: '4px'
+                  }}>
+                    <span>低质量</span>
+                    <span>高质量</span>
+                  </div>
+                </div>
+              )}
+
+              <div style={{
+                backgroundColor: '#1A1A1A',
+                padding: '16px',
+                borderRadius: '8px',
+                border: '1px solid #4A5568'
+              }}>
+                <div style={{
+                  fontSize: '12px',
+                  color: '#718096',
+                  marginBottom: '8px'
+                }}>
+                  导出预览
+                </div>
+                {exportFormat === 'json' ? (
+                  <div style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    color: '#00D4FF',
+                    marginBottom: '4px'
+                  }}>
+                    {canvasSize.width} x {canvasSize.height} 像素
+                  </div>
+                ) : (
+                  <>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: '#00D4FF',
+                      marginBottom: '4px'
+                    }}>
+                      {canvasSize.width * exportScale} x {canvasSize.height * exportScale} 像素
+                    </div>
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#718096'
+                    }}>
+                      总像素数: {(canvasSize.width * exportScale * canvasSize.height * exportScale).toLocaleString()}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                onClick={() => setShowExportDialog(false)}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: 'transparent',
+                  color: '#A0AEC0',
+                  border: '2px solid #4A5568',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  minWidth: '100px'
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  setIsExporting(true);
+                  // 实现导出功能
+                  if (exportFormat === 'png') {
+                    exportPNG();
+                  } else if (exportFormat === 'jpg') {
+                    exportJPG();
+                  } else if (exportFormat === 'svg') {
+                    exportSVG();
+                  } else if (exportFormat === 'json') {
+                    exportJSON();
+                  }
+                }}
+                disabled={isExporting}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: isExporting ? '#4A5568' : '#00D4FF',
+                  color: isExporting ? '#A0AEC0' : '#1A1A1A',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isExporting ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  minWidth: '120px',
+                  boxShadow: isExporting ? 'none' : '0 4px 12px rgba(0, 212, 255, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                {isExporting ? (
+                  <>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid #A0AEC0',
+                      borderTop: '2px solid transparent',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    导出中...
+                  </>
+                ) : (
+                  '开始导出'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 自动恢复对话框 */}
+      {showRestoreDialog && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000
+          }}
+          onClick={ignoreRestore}
+        >
+          <div
+            style={{
+              backgroundColor: '#2D3748',
+              padding: '32px',
+              borderRadius: '12px',
+              border: '2px solid #00D4FF',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.8)',
+              maxWidth: '400px',
+              width: '90%',
+              textAlign: 'center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              fontSize: '18px',
+              fontWeight: '600',
+              color: '#00D4FF',
+              marginBottom: '16px'
+            }}>
+              发现未保存的项目
+            </div>
+            
+            <div style={{
+              fontSize: '14px',
+              color: '#E2E8F0',
+              marginBottom: '24px',
+              lineHeight: '1.5'
+            }}>
+              检测到您有未完成的像素画作品，是否要恢复到上次的工作状态？
+              <br />
+              <span style={{ fontSize: '12px', color: '#A0AEC0' }}>
+                （数据保存在 {restoreData?.timestamp ? new Date(restoreData.timestamp).toLocaleString() : ''}）
+              </span>
+            </div>
+            
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'center'
+            }}>
+              <button
+                onClick={ignoreRestore}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: 'transparent',
+                  color: '#A0AEC0',
+                  border: '2px solid #4A5568',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  minWidth: '100px'
+                }}
+              >
+                忽略
+              </button>
+              <button
+                onClick={restoreProject}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#00D4FF',
+                  color: '#1A1A1A',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  minWidth: '120px',
+                  boxShadow: '0 4px 12px rgba(0, 212, 255, 0.3)'
+                }}
+              >
+                恢复项目
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{
         backgroundColor: '#2D3748',
         padding: getToolbarPadding(),
@@ -2437,6 +3371,63 @@ export default function PixelArtGenerator() {
           </div>
         )}
         
+        {/* 导入导出按钮 */}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button
+            onClick={() => document.getElementById('import-file')?.click()}
+            title="导入项目"
+            style={{
+              backgroundColor: '#4A5568',
+              color: '#00D4FF',
+              border: 'none',
+              borderRadius: '6px',
+              padding: getButtonPadding(),
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: screenSize === 'small' ? '11px' : (screenSize === 'medium' ? '12px' : '14px'),
+              fontWeight: '600',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 212, 255, 0.2)'
+            }}
+          >
+            <Upload size={getIconSize()} />
+            {screenSize === 'large' && <span>导入</span>}
+          </button>
+          <button
+            onClick={() => setShowExportDialog(true)}
+            title="导出PNG/JPG/SVG/JSON"
+            style={{
+              backgroundColor: '#4A5568',
+              color: '#00D4FF',
+              border: 'none',
+              borderRadius: '6px',
+              padding: getButtonPadding(),
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: screenSize === 'small' ? '11px' : (screenSize === 'medium' ? '12px' : '14px'),
+              fontWeight: '600',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 212, 255, 0.2)'
+            }}
+          >
+            <Download size={getIconSize()} />
+            {screenSize === 'large' && <span>导出</span>}
+          </button>
+        </div>
+        
+        {/* 隐藏的文件输入 */}
+        <input
+          id="import-file"
+          type="file"
+          accept=".json"
+          style={{ display: 'none' }}
+          onChange={handleFileImport}
+        />
+        
         {/* 缩放控制 */}
         {!isMobile && (
           <div style={{
@@ -2639,8 +3630,23 @@ export default function PixelArtGenerator() {
               zIndex: 1000,
               cursor: isToolbarDragging ? 'grabbing' : 'default'
             }}
+            onMouseUp={() => {
+              // 如果正在拖拽画布，触发主容器的mouseup处理
+              if (isDragging || isSpacePressed) {
+                handleMouseUp();
+              }
+            }}
+            onMouseMove={(e) => {
+              // 如果正在拖拽画布，让事件冒泡到主容器
+              if (isDragging || isSpacePressed) {
+                // 直接调用主容器的处理函数
+                handleMouseMove(e);
+              }
+            }}
             onMouseDown={(e) => {
-              if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.toolbar-grabber')) {
+              // 只有在真正拖拽工具栏时才处理，避免干扰画布拖拽
+              if ((e.target === e.currentTarget || (e.target as HTMLElement).closest('.toolbar-grabber')) && 
+                  !isDragging && !isSpacePressed) {
                 e.preventDefault();
                 // 使用ref立即更新拖拽状态，避免state异步更新延迟
                 isToolbarDraggingRef.current = true;
@@ -2691,6 +3697,12 @@ export default function PixelArtGenerator() {
                   
                   dragStartToolbarPos.current = { ...selectionToolbarPos };
                   currentToolbarPos.current = { ...selectionToolbarPos };
+                }
+              } else {
+                // 如果用户在拖拽画布（右键或空格键），让事件冒泡到主容器
+                // 这样可以避免干扰画布拖拽状态
+                if (isDragging || isSpacePressed) {
+                  e.stopPropagation();
                 }
               }
             }}
@@ -3538,7 +4550,12 @@ export default function PixelArtGenerator() {
             alignItems: 'center',
             padding: isMobile ? '16px' : '24px',
             overflow: 'auto'
-          }} onWheel={handleWheel}>
+          }} 
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={() => handleMouseUp()}
+          onContextMenu={handleContextMenu}>
           <div
             style={{
               transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px)`,
@@ -3547,12 +4564,6 @@ export default function PixelArtGenerator() {
             }}>
             <canvas
               ref={canvasRef}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              onWheel={handleWheel}
-              onContextMenu={handleContextMenu}
               onTouchStart={(e) => {
                 if (e.touches.length === 2) {
                   e.preventDefault();
