@@ -2,7 +2,7 @@
 
 一个功能强大、界面精美的像素艺术创作工具。
 
-![Pixel Art](https://img.shields.io/badge/Version-1.0.0-blue) ![React](https://img.shields.io/badge/React-18.2+-61DAFB) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6) ![Vite](https://img.shields.io/badge/Vite-7.2+-646CFF)
+![Pixel Art](https://img.shields.io/badge/Version-beta2-blue) ![React](https://img.shields.io/badge/React-18.2+-61DAFB) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6) ![Vite](https://img.shields.io/badge/Vite-7.2+-646CFF)
 
 [English Documentation](README_EN.md) | [中文文档](README.md)
 
@@ -39,7 +39,7 @@
 ### 🔍 缩放与导航
 
 - **缩放** - Ctrl + 滚轮、顶部按钮、双指缩放（移动端）
-- **平移** - 右键拖拽、空格 + 左键拖拽
+- **平移** - 右键拖拽、空格 + 左键拖拽、画布外拖拽支持
 - **重置视图** - 一键缩放适应
 - **状态栏** - 显示尺寸、坐标、缩放比例
 
@@ -91,15 +91,11 @@ npm run build
 - [x] 颜色系统与色板
 - [x] 缩放与导航
 - [x] 图层系统
+- [x] 导入导出功能（PNG/JPG/SVG/JSON）
+- [x] 自动保存与恢复
+- [x] 画布外拖拽支持
 
-### 🚧 开发中
-
-- [ ] PNG/JPG 导出
-- [ ] SVG 导出
-- [ ] 项目导入/导出
-- [ ] 自动保存
-
-### 📋 计划中
+### 计划中
 
 - [ ] 参考图功能
 - [ ] 完整快捷键
