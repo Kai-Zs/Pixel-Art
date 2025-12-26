@@ -191,7 +191,7 @@ export default function PixelArtGenerator() {
   const [history, setHistory] = useState<Layer[][]>([JSON.parse(JSON.stringify(layers))]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [activeLayerIndex, setActiveLayerIndex] = useState(0);
-  const [showLayersPanel, setShowLayersPanel] = useState(false);
+  const [showLayersPanel, setShowLayersPanel] = useState(true);
   
   // 导出相关状态
   const [customPalette, setCustomPalette] = useState<string[]>([]);
@@ -207,6 +207,9 @@ export default function PixelArtGenerator() {
   const [paletteWidth, setPaletteWidth] = useState(260);
   const [isPaletteDragging, setIsPaletteDragging] = useState(false);
   const [minPaletteWidth] = useState(100);
+  const [layersPanelWidth, setLayersPanelWidth] = useState(280);
+  const [isLayersPanelDragging, setIsLayersPanelDragging] = useState(false);
+  const [minLayersPanelWidth] = useState(200);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -1859,6 +1862,12 @@ export default function PixelArtGenerator() {
     e.preventDefault();
   };
 
+  const handleLayersPanelMouseDown = (e: React.MouseEvent) => {
+    setIsLayersPanelDragging(true);
+    setDragStartX(e.clientX);
+    e.preventDefault();
+  };
+
   // 监听窗口大小变化，确保最大宽度始终是屏幕的1/3
   useEffect(() => {
     const handlePaletteMouseMove = (e: MouseEvent) => {
@@ -1883,14 +1892,34 @@ export default function PixelArtGenerator() {
       setIsPaletteDragging(false);
     };
 
+    const handleLayersPanelMouseMove = (e: MouseEvent) => {
+      if (!isLayersPanelDragging) return;
+      
+      const deltaX = e.clientX - dragStartX;
+      const newWidth = layersPanelWidth + deltaX;
+      
+      const maxWidth = Math.floor(window.innerWidth / 3);
+      const clampedWidth = Math.min(maxWidth, Math.max(minLayersPanelWidth, newWidth));
+      setLayersPanelWidth(clampedWidth);
+      setDragStartX(e.clientX);
+    };
+
+    const handleLayersPanelMouseUp = () => {
+      setIsLayersPanelDragging(false);
+    };
+
     window.addEventListener('mousemove', handlePaletteMouseMove);
     window.addEventListener('mouseup', handlePaletteMouseUp);
+    window.addEventListener('mousemove', handleLayersPanelMouseMove);
+    window.addEventListener('mouseup', handleLayersPanelMouseUp);
     
     return () => {
       window.removeEventListener('mousemove', handlePaletteMouseMove);
       window.removeEventListener('mouseup', handlePaletteMouseUp);
+      window.removeEventListener('mousemove', handleLayersPanelMouseMove);
+      window.removeEventListener('mouseup', handleLayersPanelMouseUp);
     };
-  }, [isPaletteDragging, dragStartX, paletteWidth, minPaletteWidth]);
+  }, [isPaletteDragging, isLayersPanelDragging, dragStartX, paletteWidth, layersPanelWidth, minPaletteWidth, minLayersPanelWidth]);
 
   const handleQuickAddColor = () => {
     const upperColor = currentColor.toUpperCase();
@@ -3974,7 +4003,7 @@ export default function PixelArtGenerator() {
       }}>
         {/* 图层面板 */}
         <div style={{
-          width: isMobile ? (showLayersPanel ? '100%' : '0') : (showLayersPanel ? '280px' : '0'),
+          width: isMobile ? (showLayersPanel ? '100%' : '0') : (showLayersPanel ? `${layersPanelWidth}px` : '0'),
           backgroundColor: '#2D3748',
           borderRight: isMobile ? 'none' : '1px solid #4A5568',
           borderBottom: isMobile ? '1px solid #4A5568' : 'none',
@@ -3987,6 +4016,30 @@ export default function PixelArtGenerator() {
           overflowX: 'hidden',
           position: 'relative'
         }}>
+          {/* 图层面板拖动手柄 */}
+          {!isMobile && showLayersPanel && (
+            <div
+              style={{
+                position: 'absolute',
+                right: '-7.5px',
+                top: '0',
+                bottom: '0',
+                width: '15px',
+                cursor: 'col-resize',
+                backgroundColor: 'transparent',
+                zIndex: 10
+              }}
+              onMouseDown={handleLayersPanelMouseDown}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#00D4FF';
+                e.currentTarget.style.opacity = '0.3';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.opacity = '1';
+              }}
+            />
+          )}
             <div style={{
               padding: '12px 16px',
               backgroundColor: '#1A1A1A',
@@ -4084,12 +4137,12 @@ export default function PixelArtGenerator() {
                       transition: 'all 0.2s ease'
                     }}
                   >
-                    {/* 图层操作按钮组 */}
+                    {/* 图层操作按钮组 - 固定宽度 */}
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: '4px',
-                      marginRight: '6px'
+                      flexShrink: 0
                     }}>
                       {/* 可见性 */}
                       <button
@@ -4146,12 +4199,14 @@ export default function PixelArtGenerator() {
                       </button>
                     </div>
                     
-                    {/* 图层名称 */}
+                    {/* 图层名称 - 占据中间空间 */}
                     <div style={{
                       flex: 1,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px'
+                      gap: '8px',
+                      minWidth: 0,
+                      overflow: 'hidden'
                     }}>
                       {/* 图层预览缩略图 */}
                       <canvas
@@ -4208,7 +4263,8 @@ export default function PixelArtGenerator() {
                           borderRadius: '2px',
                           backgroundColor: '#CCCCCC',
                           cursor: 'pointer',
-                          border: isActive ? '1px solid #00D4FF' : '1px solid transparent'
+                          border: isActive ? '1px solid #00D4FF' : '1px solid transparent',
+                          flexShrink: 0
                         }}
                       />
                       <div style={{
@@ -4216,7 +4272,8 @@ export default function PixelArtGenerator() {
                         height: '8px',
                         borderRadius: '1px',
                         backgroundColor: isActive ? '#00D4FF' : '#4A5568',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        flexShrink: 0
                       }} />
                       {editingLayerId === layer.id ? (
                         <input
@@ -4266,7 +4323,8 @@ export default function PixelArtGenerator() {
                             borderRadius: '4px',
                             padding: '2px 4px',
                             outline: 'none',
-                            width: '100%'
+                            width: '100%',
+                            minWidth: '0'
                           }}
                         />
                       ) : (
@@ -4289,7 +4347,8 @@ export default function PixelArtGenerator() {
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            cursor: 'text'
+                            cursor: 'text',
+                            minWidth: '0'
                           }}
                         >
                           {layer.name}
@@ -4297,11 +4356,13 @@ export default function PixelArtGenerator() {
                       )}
                     </div>
                     
-                    {/* 图层顺序和删除按钮 */}
+                    {/* 图层顺序和删除按钮 - 固定在最右侧 */}
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px'
+                      gap: '4px',
+                      flexShrink: 0,
+                      marginLeft: 'auto'
                     }}>
                       {/* 向上 */}
                       <button
