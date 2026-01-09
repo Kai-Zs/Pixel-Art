@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Palette, Undo, Redo, Pencil, Eraser, MousePointer, Plus, Pipette, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCcw, Layers, Eye, EyeOff, Lock, Unlock, X, Trash2, Copy, Move, Download, Upload } from 'lucide-react';
+import * as CONSTANTS from './constants';
 
 interface Layer {
   id: string;
@@ -10,120 +11,21 @@ interface Layer {
   pixels: Record<string, string>;
 }
 
-const CANVAS_SIZES = [
-  { label: '16x16', width: 16, height: 16 },
-  { label: '32x32', width: 32, height: 32 },
-  { label: '64x64', width: 64, height: 64 },
-  { label: '128x128', width: 128, height: 128 },
-  { label: '256x256', width: 256, height: 256 }
-];
-
-const COLOR_PALETTES = {
-  basic: {
-    name: '基础',
-    colors: [
-      '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF',
-      '#FFFF00', '#FF00FF', '#00FFFF', '#FF8800', '#8800FF'
-    ]
-  },
-  retro: {
-    name: '复古游戏',
-    colors: [
-      '#000000', '#FFFFFF', '#7C7C7C', '#BCBCBC',
-      '#F8F8F8', '#0000FC', '#0058F8', '#3CBCFC',
-      '#00E436', '#008800', '#FCA044', '#F83800',
-      '#F87858', '#F8B8F8', '#F878F8', '#D800CC'
-    ]
-  },
-  flat: {
-    name: '现代扁平',
-    colors: [
-      '#1ABC9C', '#2ECC71', '#3498DB', '#9B59B6',
-      '#34495E', '#16A085', '#27AE60', '#2980B9',
-      '#8E44AD', '#2C3E50', '#F1C40F', '#E67E22',
-      '#E74C3C', '#ECF0F1', '#95A5A6', '#F39C12'
-    ]
-  },
-  pastel: {
-    name: '马卡龙',
-    colors: [
-      '#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9',
-      '#BAE1FF', '#E0BBE4', '#FFDFD3', '#FEC8D8',
-      '#D4F1F4', '#C9E4DE', '#F7D9C4', '#FAEDCB',
-      '#C6DEF1', '#DBCDF0', '#F2C6DE', '#F7D9D9'
-    ]
-  },
-  neon: {
-    name: '霓虹',
-    colors: [
-      '#FF006E', '#FB5607', '#FFBE0B', '#8338EC',
-      '#3A86FF', '#06FFA5', '#FF1493', '#C100FF',
-      '#00F5FF', '#FE00FE', '#39FF14', '#FF073A',
-      '#FFED00', '#00FFFF', '#FF10F0', '#7FFF00'
-    ]
-  },
-  earth: {
-    name: '大地',
-    colors: [
-      '#8B4513', '#A0522D', '#D2691E', '#CD853F',
-      '#DEB887', '#F4A460', '#D2B48C', '#BC8F8F',
-      '#556B2F', '#6B8E23', '#808000', '#BDB76B',
-      '#8FBC8F', '#20B2AA', '#2F4F4F', '#696969'
-    ]
-  },
-  ocean: {
-    name: '海洋',
-    colors: [
-      '#003366', '#004080', '#0059B3', '#006BB3',
-      '#007FCC', '#0099E6', '#00B3FF', '#1AC6FF',
-      '#4DD2FF', '#80DFFF', '#B3ECFF', '#CCF2FF',
-      '#006666', '#008B8B', '#20B2AA', '#48D1CC'
-    ]
-  },
-  sunset: {
-    name: '日落',
-    colors: [
-      '#2C1B47', '#4B2E63', '#7A4D7E', '#A66999',
-      '#C685B1', '#D9A6C8', '#FFC857', '#F9A826',
-      '#FF8C42', '#FF6B6B', '#E84A5F', '#C44569',
-      '#5F2C82', '#49516F', '#3B5998', '#2C3E50'
-    ]
-  },
-  cyberpunk: {
-    name: '赛博朋克',
-    colors: [
-      '#0A0E27', '#B80D57', '#F92A82', '#ED3C7B',
-      '#6C2167', '#5B1865', '#410E4F', '#0E0B16',
-      '#00D9FF', '#00F0FF', '#0ABDC6', '#00FFFF',
-      '#EA00D9', '#711C91', '#5C2A9D', '#133E7C'
-    ]
-  },
-  grayscale: {
-    name: '灰阶',
-    colors: [
-      '#000000', '#1A1A1A', '#333333', '#4D4D4D',
-      '#666666', '#808080', '#999999', '#B3B3B3',
-      '#CCCCCC', '#E6E6E6', '#F2F2F2', '#FFFFFF',
-      '#0D0D0D', '#262626', '#404040', '#595959'
-    ]
-  }
-};
-
 export default function PixelArtGenerator() {
   useEffect(() => {
     // 动态添加CSS动画
     const style = document.createElement('style');
     style.textContent = `
-      @keyframes fadeIn {
+      @keyframes ${CONSTANTS.ANIMATIONS.FADE_IN} {
         from { opacity: 0; }
         to { opacity: 1; }
       }
 
-      @keyframes slideDown {
+      @keyframes ${CONSTANTS.ANIMATIONS.SLIDE_DOWN} {
         from { transform: translate(-50%, -20px); opacity: 0; }
         to { transform: translate(-50%, 0); opacity: 1; }
       }
-      @keyframes pulse {
+      @keyframes ${CONSTANTS.ANIMATIONS.PULSE} {
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.1); }
       }
@@ -138,40 +40,40 @@ export default function PixelArtGenerator() {
     };
   }, []);
 
-  const [canvasSize, setCanvasSize] = useState(CANVAS_SIZES[1]);
-  const [currentColor, setCurrentColor] = useState('#000000');
+  const [canvasSize, setCanvasSize] = useState<{label: string; width: number; height: number}>(CONSTANTS.CANVAS_SIZES[CONSTANTS.DEFAULT_CANVAS_INDEX]);
+  const [currentColor, setCurrentColor] = useState(CONSTANTS.DEFAULT_COLOR);
   const [pixels] = useState<Record<string, string>>({});
   const [isDrawing, setIsDrawing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [screenSize, setScreenSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [screenSize, setScreenSize] = useState<'small' | 'medium' | 'large'>(CONSTANTS.SCREEN_SIZES.MEDIUM);
   const [showCustomSizeDialog, setShowCustomSizeDialog] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingSize, setPendingSize] = useState<{label: string; width: number; height: number} | null>(null);
-  const [customWidth, setCustomWidth] = useState<string>('64');
-  const [customHeight, setCustomHeight] = useState<string>('64');
-  const [toolMode, setToolMode] = useState<'draw' | 'erase' | 'select' | 'magic' | 'lasso'>('draw');
+  const [customWidth, setCustomWidth] = useState(CONSTANTS.DEFAULT_CUSTOM_WIDTH.toString());
+  const [customHeight, setCustomHeight] = useState(CONSTANTS.DEFAULT_CUSTOM_HEIGHT.toString());
+  const [toolMode, setToolMode] = useState<'draw' | 'erase' | 'select' | 'magic' | 'lasso'>(CONSTANTS.TOOL_MODES.DRAW);
   const [selection, setSelection] = useState<{startX: number; startY: number; endX: number; endY: number} | null>(null);
   const [selectedPixels, setSelectedPixels] = useState<Record<string, string>>({});
   const [isSelecting, setIsSelecting] = useState(false);
   const [isMovingSelection, setIsMovingSelection] = useState(false);
-  const [moveOffset, setMoveOffset] = useState({x: 0, y: 0});
+  const [moveOffset, setMoveOffset] = useState<{x: number; y: number}>(CONSTANTS.DEFAULT_POSITIONS.MOVE_OFFSET);
   // const [selectionStartPos, setSelectionStartPos] = useState({x: 0, y: 0});
   const [clipboardPixels, setClipboardPixels] = useState<Record<string, string>>({});
   const [clipboardSize, setClipboardSize] = useState<{width: number; height: number}>({width: 0, height: 0});
   const [isPastePreviewing, setIsPastePreviewing] = useState(false);
-  const [pastePreviewPos, setPastePreviewPos] = useState({x: 0, y: 0});
-  const [tolerance, setTolerance] = useState(10); // 魔棒选择的容差值
+  const [pastePreviewPos, setPastePreviewPos] = useState(CONSTANTS.DEFAULT_POSITIONS.PASTE_PREVIEW_POS);
+  const [tolerance, setTolerance] = useState<number>(CONSTANTS.MAGIC_WAND_CONFIG.DEFAULT_TOLERANCE); // 魔棒选择的容差值
   // 套索选择状态
   const [isLassoSelecting, setIsLassoSelecting] = useState(false);
   const [lassoPath, setLassoPath] = useState<{x: number; y: number}[]>([]);
   // 是否选择透明像素
-  const [selectTransparent, setSelectTransparent] = useState(true);
-  const [activePalette, setActivePalette] = useState<string>('basic');
-  const [hexInput, setHexInput] = useState('#000000');
-  const [customColors, setCustomColors] = useState<string[]>([]);
+  const [selectTransparent, setSelectTransparent] = useState<boolean>(CONSTANTS.SELECTION_CONFIG.DEFAULT_SELECT_TRANSPARENT);
+  const [activePalette, setActivePalette] = useState(CONSTANTS.DEFAULT_PALETTE);
+  const [hexInput, setHexInput] = useState(CONSTANTS.DEFAULT_HEX_INPUT);
+  const [customColors, setCustomColors] = useState(CONSTANTS.DEFAULT_CUSTOM_COLORS);
 
   const [showAddColorDialog, setShowAddColorDialog] = useState(false);
-  const [newColorInput, setNewColorInput] = useState('#000000');
+  const [newColorInput, setNewColorInput] = useState(CONSTANTS.DEFAULT_COLOR);
   const [showDeleteColorDialog, setShowDeleteColorDialog] = useState(false);
   const [pendingDeleteColor, setPendingDeleteColor] = useState<string | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -184,32 +86,32 @@ export default function PixelArtGenerator() {
       name: '图层 1',
       visible: true,
       locked: false,
-      opacity: 1,
+      opacity: CONSTANTS.DEFAULT_OPACITY,
       pixels: {}
     }
   ]);
   const [history, setHistory] = useState<Layer[][]>([JSON.parse(JSON.stringify(layers))]);
-  const [historyIndex, setHistoryIndex] = useState(0);
+  const [historyIndex, setHistoryIndex] = useState<number>(CONSTANTS.HISTORY_CONFIG.DEFAULT_HISTORY_INDEX);
   const [activeLayerIndex, setActiveLayerIndex] = useState(0);
   const [showLayersPanel, setShowLayersPanel] = useState(true);
   
   // 导出相关状态
-  const [customPalette, setCustomPalette] = useState<string[]>([]);
+  const [customPalette, setCustomPalette] = useState(CONSTANTS.DEFAULT_CUSTOM_COLORS);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingLayerName, setEditingLayerName] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [highlightColor, setHighlightColor] = useState<string | null>(null);
-  const [canvasScale, setCanvasScale] = useState(1);
-  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+  const [canvasScale, setCanvasScale] = useState(CONSTANTS.DEFAULT_CANVAS_SCALE);
+  const [canvasOffset, setCanvasOffset] = useState<{x: number; y: number}>(CONSTANTS.DEFAULT_POSITIONS.CANVAS_OFFSET);
   const [isDragging, setIsDragging] = useState(false);
-  const [paletteWidth, setPaletteWidth] = useState(260);
+  const [paletteWidth, setPaletteWidth] = useState<number>(CONSTANTS.UI_SIZES.DEFAULT_PALETTE_WIDTH);
   const [isPaletteDragging, setIsPaletteDragging] = useState(false);
-  const [minPaletteWidth] = useState(100);
-  const [layersPanelWidth, setLayersPanelWidth] = useState(280);
+  const [minPaletteWidth] = useState(CONSTANTS.UI_SIZES.MIN_PALETTE_WIDTH);
+  const [layersPanelWidth, setLayersPanelWidth] = useState<number>(CONSTANTS.UI_SIZES.DEFAULT_LAYERS_PANEL_WIDTH);
   const [isLayersPanelDragging, setIsLayersPanelDragging] = useState(false);
-  const [minLayersPanelWidth] = useState(200);
+  const [minLayersPanelWidth] = useState(CONSTANTS.UI_SIZES.MIN_LAYERS_PANEL_WIDTH);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -217,23 +119,23 @@ export default function PixelArtGenerator() {
   const [touchStartDistance, setTouchStartDistance] = useState(0);
   const [lastTouchPos, setLastTouchPos] = useState<{x: number; y: number} | null>(null);
   // 悬浮栏拖拽状态
-  const [selectionToolbarPos, setSelectionToolbarPos] = useState({ top: 0, left: 0 });
+  const [selectionToolbarPos, setSelectionToolbarPos] = useState(CONSTANTS.DEFAULT_POSITIONS.SELECTION_TOOLBAR_POS);
   const [isToolbarDragging, setIsToolbarDragging] = useState(false);
   const isToolbarDraggingRef = useRef(false); // 使用ref避免异步状态更新延迟
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const dragStartPos = useRef({ x: 0, y: 0 });
-  const lastMousePos = useRef({ x: 0, y: 0 }); // 记录上一次鼠标位置
-  const dragStartToolbarPos = useRef({ top: 0, left: 0 });
-  const currentToolbarPos = useRef({ top: 0, left: 0 });
+  const dragStartPos = useRef<{x: number; y: number}>(CONSTANTS.DEFAULT_POSITIONS.MOVE_OFFSET);
+  const lastMousePos = useRef<{x: number; y: number}>(CONSTANTS.DEFAULT_POSITIONS.MOVE_OFFSET); // 记录上一次鼠标位置
+  const dragStartToolbarPos = useRef<{top: number; left: number}>(CONSTANTS.DEFAULT_POSITIONS.SELECTION_TOOLBAR_POS);
+  const currentToolbarPos = useRef<{top: number; left: number}>(CONSTANTS.DEFAULT_POSITIONS.SELECTION_TOOLBAR_POS);
   const animationFrameRef = useRef<number | null>(null);
   // 存储工具栏尺寸，避免拖拽中动态获取尺寸导致的重排和尺寸值不准确
   const toolbarSizeRef = useRef({ width: 0, height: 0 });
 
   // 导出功能状态
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpg' | 'svg' | 'json'>('png');
-  const [exportScale, setExportScale] = useState(1);
-  const [exportQuality, setExportQuality] = useState(0.9);
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpg' | 'svg' | 'json'>(CONSTANTS.EXPORT_FORMATS.PNG);
+  const [exportScale, setExportScale] = useState<number>(CONSTANTS.EXPORT_CONFIG.DEFAULT_SCALE);
+    const [exportQuality, setExportQuality] = useState<number>(CONSTANTS.EXPORT_CONFIG.DEFAULT_QUALITY);
   const [isExporting, setIsExporting] = useState(false);
   
   // 自动恢复相关状态
@@ -263,7 +165,7 @@ export default function PixelArtGenerator() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colorPickerRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectionStartPosRef = useRef({x: 0, y: 0});
+  const selectionStartPosRef = useRef(CONSTANTS.DEFAULT_POSITIONS.MOVE_OFFSET);
 
   // 设置工具栏初始位置
   useEffect(() => {
@@ -271,10 +173,9 @@ export default function PixelArtGenerator() {
     const canvasRect = canvasRef.current?.getBoundingClientRect();
     if (containerRect && canvasRect) {
       // 工具栏默认宽度估计值（实际宽度会在拖拽时更新）
-      const defaultToolbarWidth = 200;
       setSelectionToolbarPos({
         top: Math.max(0, canvasRect.bottom + 10),
-        left: Math.max(0, Math.min(containerRect.width - defaultToolbarWidth, (containerRect.width - defaultToolbarWidth) / 2))
+        left: Math.max(0, Math.min(containerRect.width - CONSTANTS.UI_SIZES.DEFAULT_TOOLBAR_WIDTH, (containerRect.width - CONSTANTS.UI_SIZES.DEFAULT_TOOLBAR_WIDTH) / 2))
       });
     }
   }, []);
@@ -441,7 +342,7 @@ export default function PixelArtGenerator() {
   }, [isToolbarDragging]);
 
   useEffect(() => {
-    const saved = localStorage.getItem('pixelart_custom_colors');
+    const saved = localStorage.getItem(CONSTANTS.STORAGE_KEYS.CUSTOM_COLORS);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -715,7 +616,7 @@ export default function PixelArtGenerator() {
         autoSave: true
       };
       
-      localStorage.setItem('pixel_art_autosave', JSON.stringify(projectData));
+      localStorage.setItem(CONSTANTS.STORAGE_KEYS.AUTOSAVE, JSON.stringify(projectData));
     } catch (error) {
       console.error('自动保存失败:', error);
     }
@@ -742,10 +643,10 @@ export default function PixelArtGenerator() {
       }
 
       // 恢复画布尺寸
-      const newSize = CANVAS_SIZES.find(size => 
+      const newSize = CONSTANTS.CANVAS_SIZES.find(size => 
         size.width === (projectData.canvasSize?.width || 16) && 
         size.height === (projectData.canvasSize?.height || 16)
-      ) || CANVAS_SIZES[0];
+      ) || CONSTANTS.CANVAS_SIZES[0];
       setCanvasSize(newSize);
 
       // 恢复图层数据
@@ -926,7 +827,7 @@ export default function PixelArtGenerator() {
   useEffect(() => {
     const checkAutoRestore = () => {
       try {
-        const savedData = localStorage.getItem('pixel_art_autosave');
+        const savedData = localStorage.getItem(CONSTANTS.STORAGE_KEYS.AUTOSAVE);
         if (savedData) {
           const projectData = JSON.parse(savedData);
           
@@ -957,10 +858,10 @@ export default function PixelArtGenerator() {
 
     try {
       // 恢复画布尺寸
-      const newSize = CANVAS_SIZES.find(size => 
+      const newSize = CONSTANTS.CANVAS_SIZES.find(size => 
         size.width === (restoreData.canvasSize?.width || 16) && 
         size.height === (restoreData.canvasSize?.height || 16)
-      ) || CANVAS_SIZES[0];
+      ) || CONSTANTS.CANVAS_SIZES[0];
       setCanvasSize(newSize);
 
       // 恢复图层数据
@@ -999,7 +900,7 @@ export default function PixelArtGenerator() {
       setCanvasOffset({ x: 0, y: 0 });
 
       // 清除自动保存数据
-      localStorage.removeItem('pixel_art_autosave');
+      localStorage.removeItem(CONSTANTS.STORAGE_KEYS.AUTOSAVE);
       
       setShowRestoreDialog(false);
       setRestoreData(null);
@@ -1762,7 +1663,7 @@ export default function PixelArtGenerator() {
       return;
     }
 
-    const size = CANVAS_SIZES.find(s => {
+    const size = CONSTANTS.CANVAS_SIZES.find(s => {
       const sizeKey = s.width + 'x' + s.height;
       return sizeKey === sizeValue;
     });
@@ -1824,7 +1725,7 @@ export default function PixelArtGenerator() {
     if (pendingDeleteColor) {
       const newColors = customColors.filter(c => c !== pendingDeleteColor);
       setCustomColors(newColors);
-      localStorage.setItem('pixelart_custom_colors', JSON.stringify(newColors));
+      localStorage.setItem(CONSTANTS.STORAGE_KEYS.CUSTOM_COLORS, JSON.stringify(newColors));
       setShowDeleteColorDialog(false);
       setPendingDeleteColor(null);
     }
@@ -1851,7 +1752,7 @@ export default function PixelArtGenerator() {
     }
     const newColors = [...customColors, upperColor];
     setCustomColors(newColors);
-    localStorage.setItem('pixelart_custom_colors', JSON.stringify(newColors));
+    localStorage.setItem(CONSTANTS.STORAGE_KEYS.CUSTOM_COLORS, JSON.stringify(newColors));
     return true;
   };
 
@@ -2023,7 +1924,7 @@ export default function PixelArtGenerator() {
         setShowAddColorDialog(false);
       } else {
         addCustomColor(validColor);
-        setNewColorInput('#000000');
+        setNewColorInput(CONSTANTS.DEFAULT_COLOR);
         setShowAddColorDialog(false);
       }
     } else {
@@ -2811,7 +2712,7 @@ export default function PixelArtGenerator() {
                   </label>
                   <select
                     value={exportFormat}
-                    onChange={(e) => setExportFormat(e.target.value as 'png' | 'jpg' | 'svg' | 'json')}
+                    onChange={(e) => setExportFormat(CONSTANTS.EXPORT_FORMATS[e.target.value as keyof typeof CONSTANTS.EXPORT_FORMATS])}
                     style={{
                       width: '100%',
                       padding: '12px 16px',
@@ -2869,7 +2770,7 @@ export default function PixelArtGenerator() {
                 </div>
               </div>
 
-              {exportFormat !== 'json' && (
+              {exportFormat !== CONSTANTS.EXPORT_FORMATS.JSON && (
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{
                     display: 'block',
@@ -2906,7 +2807,7 @@ export default function PixelArtGenerator() {
                 </div>
               )}
 
-              {exportFormat === 'jpg' && (
+              {exportFormat === CONSTANTS.EXPORT_FORMATS.JPG && (
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{
                     display: 'block',
@@ -2959,7 +2860,7 @@ export default function PixelArtGenerator() {
                 }}>
                   导出预览
                 </div>
-                {exportFormat === 'json' ? (
+                {exportFormat === CONSTANTS.EXPORT_FORMATS.JSON ? (
                   <div style={{
                     fontSize: '16px',
                     fontWeight: '600',
@@ -3014,13 +2915,13 @@ export default function PixelArtGenerator() {
                 onClick={() => {
                   setIsExporting(true);
                   // 实现导出功能
-                  if (exportFormat === 'png') {
+                  if (exportFormat === CONSTANTS.EXPORT_FORMATS.PNG) {
                     exportPNG();
-                  } else if (exportFormat === 'jpg') {
+                  } else if (exportFormat === CONSTANTS.EXPORT_FORMATS.JPG) {
                     exportJPG();
-                  } else if (exportFormat === 'svg') {
+                  } else if (exportFormat === CONSTANTS.EXPORT_FORMATS.SVG) {
                     exportSVG();
-                  } else if (exportFormat === 'json') {
+                  } else if (exportFormat === CONSTANTS.EXPORT_FORMATS.JSON) {
                     exportJSON();
                   }
                 }}
@@ -3175,7 +3076,7 @@ export default function PixelArtGenerator() {
           </span>
           <select
             value={
-              CANVAS_SIZES.some(s => s.width === canvasSize.width && s.height === canvasSize.height)
+              CONSTANTS.CANVAS_SIZES.some(s => s.width === canvasSize.width && s.height === canvasSize.height)
                 ? (canvasSize.width + 'x' + canvasSize.height)
                 : 'custom'
             }
@@ -3190,13 +3091,13 @@ export default function PixelArtGenerator() {
               cursor: 'pointer'
             }}
           >
-            {CANVAS_SIZES.map(size => (
+            {CONSTANTS.CANVAS_SIZES.map(size => (
               <option key={size.label} value={size.width + 'x' + size.height}>
                 {size.label}
               </option>
             ))}
             <option value="custom">
-              自定义 {!CANVAS_SIZES.some(s => s.label === canvasSize.label) ? ('(' + canvasSize.label + ')') : ''}
+              自定义 {!CONSTANTS.CANVAS_SIZES.some(s => s.label === canvasSize.label) ? ('(' + canvasSize.label + ')') : ''}
             </option>
           </select>
         </div>
@@ -4781,7 +4682,7 @@ export default function PixelArtGenerator() {
                 overflowX: 'auto',
                 flexWrap: 'wrap'
               }}>
-                {(Object.keys(COLOR_PALETTES) as Array<keyof typeof COLOR_PALETTES>).map(key => (
+                {(Object.keys(CONSTANTS.COLOR_PALETTES) as Array<keyof typeof CONSTANTS.COLOR_PALETTES>).map(key => (
                   <button
                     key={key}
                     onClick={() => setActivePalette(key)}
@@ -4798,7 +4699,7 @@ export default function PixelArtGenerator() {
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    {COLOR_PALETTES[key].name}
+                    {CONSTANTS.COLOR_PALETTES[key].name}
                   </button>
                 ))}
                 <button
@@ -4913,7 +4814,7 @@ export default function PixelArtGenerator() {
                   flexWrap: 'wrap',
                   gap: '8px'
                 }}>
-                  {COLOR_PALETTES[activePalette as keyof typeof COLOR_PALETTES].colors.map((color: string, index: number) => (
+                  {CONSTANTS.COLOR_PALETTES[activePalette as keyof typeof CONSTANTS.COLOR_PALETTES].colors.map((color: string, index: number) => (
                     <div
                       key={activePalette + '-' + index}
                       onClick={() => {
