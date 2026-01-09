@@ -80,6 +80,16 @@ npm run build
 
 Right-side layer panel: Create, sort, adjust opacity, show/hide, lock
 
+## 🤖 AI Programming Practice
+
+This project uses AI-assisted software development.
+
+### 🛠️ AI Tool Applications
+
+- **DeepSeek** - Generate detailed requirement documents and development plans
+- **Claude** - Create project base version code
+- **Trae IDE** - Iterative development, code improvement, bug fixes
+
 ## 🎯 Development Roadmap
 
 ### ✅ Completed
@@ -97,6 +107,7 @@ Right-side layer panel: Create, sort, adjust opacity, show/hide, lock
   
 ### 📋 Planned
 
+- [ ] Modular design
 - [ ] Reference image feature
 - [ ] Complete keyboard shortcuts
 - [ ] Extract palette from image
