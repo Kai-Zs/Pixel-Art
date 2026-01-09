@@ -117,6 +117,10 @@ This project uses AI-assisted software development.
 - [ ] Performance optimization
 - [ ] Mobile optimization
 
+### 📝 Detailed Development Progress
+
+For a more detailed view of development progress, please check the [Development Todo List](pixel_art_todo.md).
+
 ## 🛠️ Tech Stack
 
 - React 18.2+ / TypeScript 5.0+ / Vite 7.2+

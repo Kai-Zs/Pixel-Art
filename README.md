@@ -117,6 +117,10 @@ npm run build
 - [ ] 性能优化
 - [ ] 移动端优化
 
+### 📝 详细开发进度
+
+查看更详细的开发进度，请查看 [开发待办列表](pixel_art_todo.md)。
+
 ## 🛠️ 技术栈
 
 - React 18.2+ / TypeScript 5.0+ / Vite 7.2+
